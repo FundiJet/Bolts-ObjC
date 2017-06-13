@@ -319,6 +319,7 @@ NSString *const BFTaskMultipleErrorsUserInfoKey = @"errors";
 - (BFTask *)continueWithExecutor:(BFExecutor *)executor
                            block:(BFContinuationBlock)block
                cancellationToken:(nullable BFCancellationToken *)cancellationToken {
+
     BFTaskCompletionSource *tcs = [BFTaskCompletionSource taskCompletionSource];
 
     // Capture all of the state that needs to used when the continuation is complete.
@@ -329,9 +330,13 @@ NSString *const BFTaskMultipleErrorsUserInfoKey = @"errors";
         }
 
         id result = block(self);
-        if ([result isKindOfClass:[BFTask class]]) {
 
-            id (^setupWithTask) (BFTask *) = ^id(BFTask *task) {
+        if ([result isKindOfClass:[BFTask class]]) { // 如果当前 BFTask 的任务的执行结果是 BFTask 对象
+            // 转换任务的执行结果
+            BFTask *resultTask = (BFTask *)result;
+
+            // 新建一个 block 任务，任务内容是根据当前 BFTask 的执行结果配置 BFTaskCompletionSource
+            id (^setupWithTask) (BFTask *) = ^id(BFTask *task) { // 这里的 task 就是 resultTask
                 if (cancellationToken.cancellationRequested || task.cancelled) {
                     [tcs cancel];
                 } else if (task.error) {
@@ -342,15 +347,15 @@ NSString *const BFTaskMultipleErrorsUserInfoKey = @"errors";
                 return nil;
             };
 
-            BFTask *resultTask = (BFTask *)result;
-
             if (resultTask.completed) {
                 setupWithTask(resultTask);
             } else {
+                // 当前 BFTask 的任务尚未完成，缓存上面新建的 block 任务，延后处理
                 [resultTask continueWithBlock:setupWithTask];
             }
 
         } else {
+            // 如果当前 BFTask 的任务的执行结果不是 BFTask 对象，存储执行结果
             tcs.result = result;
         }
     };
